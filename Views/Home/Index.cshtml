@@ -1,0 +1,192 @@
+﻿
+@{
+    Layout = "";
+}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script type="text/javascript" src="https://gosspublic.alicdn.com/aliyun-oss-sdk-6.16.0.min.js"></script>
+    <script src="https://cdn.staticfile.org/jquery/1.10.2/jquery.min.js"></script>
+</head>
+
+<body>
+
+    <input type="file" id="btn" onchange="upload()">
+    <div id="progress"></div>
+    <script type="text/javascript">
+
+        var sts_key = "STS_Data";
+
+        $(function () {
+           
+            var STS_Data = cacheGet(sts_key);
+            if (!STS_Data) {
+                $.getJSON("/Home/GetSTSToken", function (data) {
+                    STS_Data = data;
+                    console.log(STS_Data);
+                    // 存数据
+                    cacheSet(sts_key, STS_Data, 1200);
+                });
+            }
+
+        });
+
+
+
+        
+
+
+        //const options = {
+        //    // 获取分片上传进度、断点和返回值。
+        //    progress: (p, cpt, res) => {
+        //        console.log(p);
+        //        $("#progress").text((p.toFixed(2) * 100) + "%");
+        //    },
+        //    // 设置并发上传的分片数量。
+        //    parallel: 4,
+        //    // 设置分片大小。默认值为1 MB，最小值为100 KB。
+        //    partSize: 20 * 1024 * 1024,
+        //    // headers,
+        //    // 自定义元数据，通过HeadObject接口可以获取Object的元数据。
+        //    // meta: { year: 2020, people: "test" },
+        //    //mime: "text/plain",
+        //};
+
+        async function putObject(data, filename,filesize) {
+            try {
+                console.log(dataToLocalLongString(new Date()));
+                $("#progress").text("0");
+                var STS_Data = cacheGet(sts_key);
+
+                var client = new OSS({
+                    region: 'oss-cn-beijing', //你的oss地址 ，具体位置见下图
+                    accessKeyId: STS_Data.accessKeyId, //你的ak
+                    accessKeySecret: STS_Data.accessKeySecret, //你的secret
+                    stsToken: STS_Data.securityToken,//
+                    bucket: 'xiaonanmu' //你的oss名字
+                });
+
+                var result;
+
+                if (filesize / 1024 / 1024 <= 100) {
+
+                    console.log("简单上传");
+
+                    //简单上传
+                    // 填写Object完整路径。Object完整路径中不能包含Bucket名称。
+                    // 您可以通过自定义文件名（例如exampleobject.txt）或文件完整路径（例如exampledir/exampleobject.txt）的形式实现将数据上传到当前Bucket或Bucket中的指定目录。
+                    // data对象可以自定义为file对象、Blob数据或者OSS Buffer。
+                    result = await client.put(
+                        filename,
+                        data
+                        //{headers}
+                    );
+
+                }
+                else {
+
+                    console.log("分片上传");
+                    // 分片上传。
+                    result = await client.multipartUpload(filename, data, {
+                        // 获取分片上传进度、断点和返回值。
+                        progress: (p, cpt, res) => {
+                            console.log(p);
+                            $("#progress").text((p.toFixed(2) * 100) + "%");
+                        },
+                        // 设置并发上传的分片数量。
+                        parallel: 20,
+                        // 设置分片大小。默认值为1 MB，最小值为100 KB。
+                        partSize: 3 * 1024 * 1024,
+                    });
+                }
+
+
+                console.log(result);
+                console.log(dataToLocalLongString(new Date()));
+
+            } catch (e) {
+                console.log(e);
+            }
+        }
+
+
+        function upload(event) {
+
+            var e = window.event || event
+            var file = e.target.files[0];
+            var filename = file.name;
+
+            console.log(file);
+            console.log(filename);
+
+            putObject(file, "test/" + filename, file.size);
+        }
+
+
+
+        //时间日期转换成string（yyyy-MM-ddThh:mm:ss）
+        function dataToLocalLongString(d) {
+            var ar_date = [d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()];
+            for (var i = 0; i < ar_date.length; i++) ar_date[i] = dFormat(ar_date[i]);
+            return ar_date.slice(0, 3).join('-') + 'T' + ar_date.slice(3).join(':');
+            function dFormat(i) { return i < 10 ? "0" + i.toString() : i; }
+        }
+
+
+  
+        function cacheSet(key, value = '', expire = 0) {
+            // 当前时间戳
+            var nowTime = Math.ceil(Date.now() / 1000);
+            // 设置数据
+            localStorage.setItem(key, JSON.stringify(value))
+            // 判断是否有过期时间
+            if (expire > 0) {
+                // 设置过期时间
+                localStorage.setItem(key + '_expire', (nowTime + parseInt(expire)))
+            }
+            else {
+                // 设置过期时间
+                localStorage.setItem(key + '_expire', 0)
+            }
+            return true;
+        }
+
+
+        function cacheGet(key) {
+            // 当前时间戳
+            var nowTime = Math.ceil(Date.now() / 1000);
+            // 获取键时间戳
+            var rawCacheDataExpire = localStorage.getItem(key + '_expire');
+            var cacheDataExpire = parseInt(rawCacheDataExpire);
+
+            // 强制过期时间 为0时忽略 用于解决缓存时间与本地时间差距过大(例本地更改了计算机时间)
+            var forceTime = 3600;
+            // 判断用户是否删除了过期时间 判断是否设置了过期时间 判断是否超过过期时间 判断当前计算机时间与设置的过期时间差距是否过大
+            if ((rawCacheDataExpire === null) || (cacheDataExpire > 0) && ((nowTime > cacheDataExpire) || (forceTime > 0 && Math.abs(cacheDataExpire - nowTime) > forceTime))) {
+                // 删除过期key
+                localStorage.removeItem(key)
+                // 删除过期时间
+                localStorage.removeItem(key + '_expire')
+                return false;
+            }
+
+            // 获取数据
+            cacheData = JSON.parse(localStorage.getItem(key));
+
+            if (cacheData === null || cacheData === false) {
+                return false;
+            }
+            // 返回数据
+            return cacheData;
+        }
+
+    </script>
+
+</body>
+
+</html>
